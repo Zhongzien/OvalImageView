@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="OvalImageView">
+        <attr name="roundRadius" format="dimension" />
+        <attr name="roundLeftTopRadius" format="dimension" />
+        <attr name="roundRightTopRadius" format="dimension" />
+        <attr name="roundLeftBottomRadius" format="dimension" />
+        <attr name="roundRightBottomRadius" format="dimension" />
+        <attr name="drawShape">
+            <enum name="normal" value="0"/>
+            <enum name="round" value="1" />
+            <enum name="circle" value="2" />
+        </attr>
+    </declare-styleable>
+
+</resources>
