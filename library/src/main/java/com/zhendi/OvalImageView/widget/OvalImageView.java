@@ -3,11 +3,19 @@ package com.zhendi.OvalImageView.widget;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PixelFormat;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
+import android.graphics.Xfermode;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.widget.ImageView;
 
@@ -20,7 +28,7 @@ import com.zhendi.OvalImageView.R;
 
 @SuppressLint("AppCompatCustomView")
 public class OvalImageView extends ImageView {
-    //    private static final String TAG = OvalImageView.class.getSimpleName();
+    private static final String TAG = OvalImageView.class.getSimpleName();
     public static final int NORMAL = 0;
     public static final int ROUND = 1;
     public static final int CIRCLE = 2;
@@ -28,12 +36,19 @@ public class OvalImageView extends ImageView {
     private int mDrawShape;
 
     private RectF mRectF = new RectF();
+    RectF srcRect = new RectF();
+
+    private Paint paint;
+    private Xfermode xfermode;
+    private Bitmap markBitmap;
+    private float oldW, oldH;
 
     //数据带把着圆角 左上角半径xy值 右上角半径xy值 右下角半径xy值 左下角半径xy值
     private float[] radius = new float[8];
 
     public OvalImageView(Context context) {
         super(context);
+        initData();
     }
 
     public OvalImageView(Context context, AttributeSet attrs) {
@@ -42,10 +57,18 @@ public class OvalImageView extends ImageView {
 
     public OvalImageView(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        initData(context, attrs);
+        initAttrs(context, attrs);
+        initData();
     }
 
-    private void initData(Context context, AttributeSet attrs) {
+    private void initData() {
+        paint = new Paint();
+        paint.setAntiAlias(true);
+        paint.setDither(true);
+        xfermode = new PorterDuffXfermode(PorterDuff.Mode.SRC_IN);
+    }
+
+    private void initAttrs(Context context, AttributeSet attrs) {
         TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.OvalImageView);
         mDrawShape = a.getInteger(R.styleable.OvalImageView_drawShape, NORMAL);
 
@@ -61,7 +84,6 @@ public class OvalImageView extends ImageView {
                 setRadius(roundLeftTopRadius, roundRightTopRadius, roundLeftBottomRadius, roundRightBottomRadius);
             }
         }
-
         a.recycle();
     }
 
@@ -98,21 +120,54 @@ public class OvalImageView extends ImageView {
     @Override
     protected void onDraw(Canvas canvas) {
 
-        setPaint();
+//        setPaint();
+//
+//        Path path = null;
+//        if (mDrawShape == ROUND) {
+//            path = getRoundPath();
+//        } else if (mDrawShape == CIRCLE) {
+//            path = getCirclePath();
+//        }
+//
+//
+//        if (path != null) {
+//            canvas.clipPath(path);
+//        }
+//        super.onDraw(canvas);
 
-        Path path = null;
-        if (mDrawShape == ROUND) {
-            path = getRoundPath();
-        } else if (mDrawShape == CIRCLE) {
-            path = getCirclePath();
+        Drawable drawable = getDrawable();
+        if (drawable == null) {
+            return;
+        }
+        if (drawable.getIntrinsicWidth() == 0 || drawable.getIntrinsicHeight() == 0) {
+            return;
         }
 
+        Matrix matrix = getImageMatrix();
+        if (matrix == null && getPaddingTop() == 0 && getPaddingBottom() == 0) {
+            drawable.draw(canvas);
+        } else {
+            if (mDrawShape == NORMAL) {
+                super.onDraw(canvas);
+            } else {
+                Bitmap bitmapContent = drawableToBitmap(drawable, matrix);
+                srcRect.set(0, 0, bitmapContent.getWidth(), bitmapContent.getHeight());
+                Path path = null;
+                if (mDrawShape == CIRCLE) {
+                    path = getCirclePath(mRectF);
+                } else if (mDrawShape == ROUND) {
+                    path = getRoundPath(mRectF);
+                }
+                createMarkBitmap(path, srcRect);
+                final int saveCount = canvas.saveLayer(srcRect, paint, Canvas.ALL_SAVE_FLAG);
+                canvas.drawBitmap(markBitmap, null, srcRect, paint);
+                paint.setXfermode(xfermode);
+                canvas.drawBitmap(bitmapContent, null, srcRect, paint);
+                paint.setXfermode(null);
+                canvas.restoreToCount(saveCount);
+            }
 
-        if (path != null) {
-            canvas.clipPath(path);
         }
-
-        super.onDraw(canvas);
     }
 
     private void setPaint() {
@@ -133,19 +188,55 @@ public class OvalImageView extends ImageView {
         mPaint.setFilterBitmap(true);
     }
 
-    private Path getRoundPath() {
+    private Path getRoundPath(RectF rectF) {
         Path path = new Path();
-        path.addRoundRect(mRectF, radius, Path.Direction.CW);
+        path.addRoundRect(rectF, radius, Path.Direction.CW);
         return path;
     }
 
-    private Path getCirclePath() {
+    private Path getCirclePath(RectF rectF) {
         Path path = new Path();
-        final float width = getMeasuredWidth();
-        final float height = getMeasuredHeight();
+        final float width = rectF.width();
+        final float height = rectF.height();
         float radius = width > height ? height : width;
         path.addCircle(width / 2, height / 2, radius / 2, Path.Direction.CW);
         return path;
+    }
+
+    private Bitmap drawableToBitmap(Drawable drawable, Matrix matrix) {
+        Bitmap.Config config = drawable.getOpacity() != PixelFormat.OPAQUE ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
+        Bitmap bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight(), config);
+        Canvas canvas = new Canvas(bitmap);
+
+        if (getCropToPadding()) {
+            final int scrollX = getScrollX();
+            final int scrollY = getScrollY();
+            canvas.clipRect(scrollX + getPaddingLeft(), scrollY + getPaddingTop(),
+                    scrollX + getRight() - getLeft() - getPaddingRight(),
+                    scrollY + getBottom() - getTop() - getPaddingBottom());
+        }
+
+        canvas.translate(getPaddingLeft(), getPaddingTop());
+
+        if (matrix != null) {
+            canvas.concat(matrix);
+        }
+
+        drawable.setBounds(0, 0, drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight());
+        drawable.draw(canvas);
+        return bitmap;
+    }
+
+    private void createMarkBitmap(Path path, RectF rectF) {
+        if (oldW != rectF.width() || oldH != rectF.height()) {
+            oldW = rectF.width();
+            oldH = rectF.height();
+            markBitmap = Bitmap.createBitmap((int) rectF.width(), (int) rectF.height(), Bitmap.Config.ARGB_8888);
+        }
+        Canvas canvas = new Canvas(markBitmap);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.YELLOW);
+        canvas.drawPath(path, paint);
     }
 
 }
