@@ -7,10 +7,12 @@
         <attr name="roundLeftBottomRadius" format="dimension" />
         <attr name="roundRightBottomRadius" format="dimension" />
         <attr name="drawShape">
-            <enum name="normal" value="0"/>
+            <enum name="normal" value="0" />
             <enum name="round" value="1" />
             <enum name="circle" value="2" />
         </attr>
+        <attr name="borderWidth" format="dimension" />
+        <attr name="borderColor" format="color" />
     </declare-styleable>
 
 </resources>

@@ -1,17 +1,16 @@
 apply plugin: 'com.android.library'
+apply plugin: 'com.novoda.bintray-release'//添加
 
 android {
     compileSdkVersion 26
 
-
     defaultConfig {
-        minSdkVersion 14
+        minSdkVersion 16
         targetSdkVersion 26
         versionCode 1
-        versionName "1.0"
+        versionName "0.1.0"
 
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
-
     }
 
     buildTypes {
@@ -20,8 +19,23 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-
+//
+//    lintOptions {
+//        abortOnError false
+//    }
 }
 
 dependencies {
+    implementation 'com.android.support:support-annotations:26.+'
+}
+
+publish {
+    userOrg = 'zhendi'//bintray.com用户名
+    repoName = 'zhendi'
+    groupId = 'com.zhendi'//jcenter上的路径
+    artifactId = 'OvalImageView'//项目名称
+    publishVersion = '0.1.0'//版本号
+    desc = 'OvalImageView can draw circle Image and round Image,But it can not draw frame now'
+//描述，不重要
+    website = 'https://github.com/Zhongzien/OvalImageView'//网站，不重要；尽量模拟github上的地址，例如我这样的；当然你有地址最好了
 }

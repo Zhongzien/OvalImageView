@@ -6,5 +6,18 @@
     android:layout_height="match_parent"
     tools:context="com.zhendi.MainActivity">
 
+    <com.zhendi.OvalImageView.widget.OvalImageView
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        android:scaleType="centerCrop"
+        android:src="@mipmap/ic_image"
+        app:drawShape="circle"
+        app:borderWidth="10dp"
+        app:borderColor="@color/colorAccent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:roundRadius="20dp" />
 
 </android.support.constraint.ConstraintLayout>

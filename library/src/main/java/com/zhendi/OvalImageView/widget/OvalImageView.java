@@ -15,7 +15,9 @@ import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
 import android.graphics.Xfermode;
 import android.graphics.drawable.Drawable;
+import android.support.annotation.ColorInt;
 import android.util.AttributeSet;
+import android.util.TypedValue;
 import android.widget.ImageView;
 
 import com.zhendi.OvalImageView.R;
@@ -47,6 +49,7 @@ public class OvalImageView extends ImageView {
 
     private int mBorderColor = 0xFF0080FF;
     private Paint mPaintBorder = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private float mBorderWidth;
 
     public OvalImageView(Context context) {
         super(context);
@@ -86,6 +89,9 @@ public class OvalImageView extends ImageView {
                 setRadius(roundLeftTopRadius, roundRightTopRadius, roundLeftBottomRadius, roundRightBottomRadius);
             }
         }
+
+        mBorderWidth = a.getDimension(R.styleable.OvalImageView_borderWidth, 0f);
+        mBorderColor = a.getColor(R.styleable.OvalImageView_borderColor, Color.TRANSPARENT);
         a.recycle();
     }
 
@@ -112,6 +118,15 @@ public class OvalImageView extends ImageView {
         invalidate();
     }
 
+    public void setBorderWidth(float width) {
+        mBorderWidth = dip2px(width);
+        invalidate();
+    }
+
+    public void setBorderColor(@ColorInt int color) {
+        mBorderWidth = color;
+        invalidate();
+    }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -143,13 +158,26 @@ public class OvalImageView extends ImageView {
                 } else if (mDrawShape == ROUND) {
                     path = getRoundPath(mRectF);
                 }
+
+                drawBorderBackground(canvas, path);
+
+                //制作需要显示的目标图形
                 Bitmap bitmapContent = drawableToBitmap(drawable, matrix);
                 srcRect.set(0, 0, bitmapContent.getWidth(), bitmapContent.getHeight());
-                createMarkBitmap(path, srcRect);
-                final int saveCount = canvas.saveLayer(srcRect, paint, Canvas.ALL_SAVE_FLAG);
-                canvas.drawBitmap(markBitmap, null, srcRect, paint);
+                //制作框架原型图
+                createMarkBitmap(path, mRectF);
+                //绘制圆角图形
+                RectF rectFSrc = new RectF(srcRect);
+                RectF rectFMark = new RectF(mRectF);
+                if (mBorderWidth > 0) {
+                    adjustRectF(rectFSrc);
+                    adjustRectF(rectFMark);
+                }
+                final int saveCount = canvas.saveLayer(rectFSrc, paint, Canvas.ALL_SAVE_FLAG);
+                setCanvasMatrix(canvas, mRectF);
+                canvas.drawBitmap(markBitmap, null, rectFMark, paint);
                 paint.setXfermode(xfermode);
-                canvas.drawBitmap(bitmapContent, null, srcRect, paint);
+                canvas.drawBitmap(bitmapContent, null, rectFSrc, paint);
                 paint.setXfermode(null);
                 canvas.restoreToCount(saveCount);
             }
@@ -206,6 +234,37 @@ public class OvalImageView extends ImageView {
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setColor(Color.BLUE);
         canvas.drawPath(path, paint);
+    }
+
+    private void drawBorderBackground(Canvas canvas, Path path) {
+        if (mBorderWidth > 0) {
+            int saveCount = canvas.getSaveCount();
+            canvas.save();
+            mPaintBorder.setColor(mBorderColor);
+            canvas.drawPath(path, mPaintBorder);
+            canvas.restoreToCount(saveCount);
+        }
+    }
+
+    private void setCanvasMatrix(Canvas canvas, RectF rectF) {
+        if (mBorderWidth > 0) {
+            Matrix matrix = new Matrix();
+            float scaleWidth = (rectF.width() - mBorderWidth * 2) / rectF.width();
+            float scaleHeight = (rectF.height() - mBorderWidth * 2) / rectF.height();
+            matrix.setScale(scaleWidth, scaleHeight);
+            canvas.setMatrix(matrix);
+        }
+    }
+
+    private float dip2px(float dp) {
+        return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
+    }
+
+    private void adjustRectF(RectF rectF) {
+        rectF.set(rectF.left + mBorderWidth,
+                rectF.top + mBorderWidth,
+                rectF.right - mBorderWidth,
+                rectF.bottom - mBorderWidth);
     }
 
 }
