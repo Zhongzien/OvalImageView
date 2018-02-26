@@ -17,6 +17,7 @@ import android.graphics.Xfermode;
 import android.graphics.drawable.Drawable;
 import android.support.annotation.ColorInt;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.widget.ImageView;
 
@@ -33,23 +34,31 @@ public class OvalImageView extends ImageView {
     public static final int NORMAL = 0;
     public static final int ROUND = 1;
     public static final int CIRCLE = 2;
-
+    //绘制的形状
     private int mDrawShape;
-
-    private RectF mRectF = new RectF();
-    RectF srcRect = new RectF();
-
-    private Paint paint;
+    //目标 bitmap 矩形，即目标形状的 bitmap
+    private RectF mDstRectF = new RectF();
+    //原图 bitmap 矩形，即 drawable 转换来的 bitmap
+    private RectF mSrcRect = new RectF();
+    //合成目标bitmap用的 paint
+    private Paint mSrcPaint;
+    // Xfermode 的过渡模式使用 scr_in
     private Xfermode xfermode;
-    private Bitmap markBitmap;
-    private float oldW, oldH;
+    //目标形状的 bitmap
+    private Bitmap mDstBitmap;
+    //记录当前的正在使用 mDstRectF 的宽高，若宽高改变就刷新 mDstBitmap 的大小
+    private float oldWidth, oldHeight;
 
     //数据带把着圆角 左上角半径xy值 右上角半径xy值 右下角半径xy值 左下角半径xy值
     private float[] radius = new float[8];
-
-    private int mBorderColor = 0xFF0080FF;
+    //边框的颜色
+    private int mBorderColor = 0x00000000;
+    //绘制边框最终图形所需用的 paint
     private Paint mPaintBorder = new Paint(Paint.ANTI_ALIAS_FLAG);
+    //边框的宽度
     private float mBorderWidth;
+    //Xfermode 的过渡模式使用 SRC_OVER
+    private Xfermode xfermodeBorder;
 
     public OvalImageView(Context context) {
         super(context);
@@ -67,10 +76,11 @@ public class OvalImageView extends ImageView {
     }
 
     private void initData() {
-        paint = new Paint();
-        paint.setAntiAlias(true);
-        paint.setDither(true);
+        mSrcPaint = new Paint();
+        mSrcPaint.setAntiAlias(true);
+        mSrcPaint.setDither(true);
         xfermode = new PorterDuffXfermode(PorterDuff.Mode.SRC_IN);
+        xfermodeBorder = new PorterDuffXfermode(PorterDuff.Mode.SRC_OVER);
     }
 
     private void initAttrs(Context context, AttributeSet attrs) {
@@ -91,7 +101,7 @@ public class OvalImageView extends ImageView {
         }
 
         mBorderWidth = a.getDimension(R.styleable.OvalImageView_borderWidth, 0f);
-        mBorderColor = a.getColor(R.styleable.OvalImageView_borderColor, Color.TRANSPARENT);
+        mBorderColor = a.getColor(R.styleable.OvalImageView_borderColor, Color.WHITE);
         a.recycle();
     }
 
@@ -131,7 +141,7 @@ public class OvalImageView extends ImageView {
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-        mRectF.set(0, 0, getMeasuredWidth(), getMeasuredHeight());
+        mDstRectF.set(0, 0, getMeasuredWidth(), getMeasuredHeight());
     }
 
     @Override
@@ -154,44 +164,50 @@ public class OvalImageView extends ImageView {
             } else {
                 Path path = null;
                 if (mDrawShape == CIRCLE) {
-                    path = getCirclePath(mRectF);
+                    path = buildCirclePath(mDstRectF);
                 } else if (mDrawShape == ROUND) {
-                    path = getRoundPath(mRectF);
+                    path = buildRoundPath(mDstRectF);
                 }
 
-                drawBorderBackground(canvas, path);
-
-                //制作需要显示的目标图形
-                Bitmap bitmapContent = drawableToBitmap(drawable, matrix);
-                srcRect.set(0, 0, bitmapContent.getWidth(), bitmapContent.getHeight());
-                //制作框架原型图
-                createMarkBitmap(path, mRectF);
-                //绘制圆角图形
-                RectF rectFSrc = new RectF(srcRect);
-                RectF rectFMark = new RectF(mRectF);
+                //创建原图 bitmap
+                Bitmap srcBitmap = drawableToBitmap(drawable, matrix);
+                mSrcRect.set(0, 0, srcBitmap.getWidth(), srcBitmap.getHeight());
+                //创建目标形状 bitmap
+                createMarkBitmap(path, mDstRectF);
+                //创建目标形状原图 bitmap
+                Log.i(TAG, "mDstRectF width:" + mDstRectF.width() + "/height:" + mDstRectF.height());
+                Bitmap targetBitmap = createTargetBitmap(mDstBitmap, srcBitmap, mDstRectF, mSrcRect);
+                RectF targetRectF = new RectF();
+                targetRectF.set(0, 0, targetBitmap.getWidth(), targetBitmap.getHeight());
+                //判断是否有设置边框，若有则调整 target 的绘制区域的矩形
                 if (mBorderWidth > 0) {
-                    adjustRectF(rectFSrc);
-                    adjustRectF(rectFMark);
+                    adjustRectF(targetRectF);
                 }
-                final int saveCount = canvas.saveLayer(rectFSrc, paint, Canvas.ALL_SAVE_FLAG);
-                setCanvasMatrix(canvas, mRectF);
-                canvas.drawBitmap(markBitmap, null, rectFMark, paint);
-                paint.setXfermode(xfermode);
-                canvas.drawBitmap(bitmapContent, null, rectFSrc, paint);
-                paint.setXfermode(null);
+                //创建边框 bitmap
+                Bitmap borderBitmap = createBorderBackground(mDstRectF, path);
+                final int saveCount = canvas.saveLayer(mDstRectF, mSrcPaint, Canvas.ALL_SAVE_FLAG);
+                if (mBorderWidth > 0) {
+                    canvas.drawBitmap(borderBitmap, null, mDstRectF, mSrcPaint);
+                }
+                mSrcPaint.setXfermode(xfermodeBorder);
+                canvas.drawBitmap(targetBitmap, null, targetRectF, mSrcPaint);
+                mSrcPaint.setXfermode(null);
                 canvas.restoreToCount(saveCount);
+
             }
 
         }
     }
 
-    private Path getRoundPath(RectF rectF) {
+    //构造圆角矩形路径
+    private Path buildRoundPath(RectF rectF) {
         Path path = new Path();
         path.addRoundRect(rectF, radius, Path.Direction.CW);
         return path;
     }
 
-    private Path getCirclePath(RectF rectF) {
+    //构造圆形路径
+    private Path buildCirclePath(RectF rectF) {
         Path path = new Path();
         final float width = rectF.width();
         final float height = rectF.height();
@@ -200,6 +216,7 @@ public class OvalImageView extends ImageView {
         return path;
     }
 
+    //构造圆角矩形路径
     private Bitmap drawableToBitmap(Drawable drawable, Matrix matrix) {
         Bitmap.Config config = drawable.getOpacity() != PixelFormat.OPAQUE ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
         Bitmap bitmap = Bitmap.createBitmap(getMeasuredWidth(), getMeasuredHeight(), config);
@@ -224,29 +241,47 @@ public class OvalImageView extends ImageView {
         return bitmap;
     }
 
+    //drawable 转换为 bitmap
     private void createMarkBitmap(Path path, RectF rectF) {
-        if (oldW != rectF.width() || oldH != rectF.height()) {
-            oldW = rectF.width();
-            oldH = rectF.height();
-            markBitmap = Bitmap.createBitmap((int) rectF.width(), (int) rectF.height(), Bitmap.Config.ARGB_8888);
+        if (oldWidth != rectF.width() || oldHeight != rectF.height()) {
+            oldWidth = rectF.width();
+            oldHeight = rectF.height();
+            mDstBitmap = Bitmap.createBitmap((int) rectF.width(), (int) rectF.height(), Bitmap.Config.ARGB_8888);
         }
-        Canvas canvas = new Canvas(markBitmap);
+        Canvas canvas = new Canvas(mDstBitmap);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setColor(Color.BLUE);
         canvas.drawPath(path, paint);
     }
 
-    private void drawBorderBackground(Canvas canvas, Path path) {
+    //创建边框 bitmap
+    private Bitmap createBorderBackground(RectF rectF, Path path) {
+        Bitmap bitmap = null;
         if (mBorderWidth > 0) {
-            int saveCount = canvas.getSaveCount();
-            canvas.save();
+            bitmap = Bitmap.createBitmap((int) rectF.width(), (int) rectF.height(), Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
             mPaintBorder.setColor(mBorderColor);
             canvas.drawPath(path, mPaintBorder);
-            canvas.restoreToCount(saveCount);
         }
+        return bitmap;
     }
 
-    private void setCanvasMatrix(Canvas canvas, RectF rectF) {
+    //合成目标形状的圆形图
+    private Bitmap createTargetBitmap(Bitmap dstBitmap, Bitmap srcBitmap, RectF dstRectF, RectF srcRectF) {
+        mSrcRect.set(0, 0, srcBitmap.getWidth(), srcBitmap.getHeight());
+        //绘制圆角图形
+        Bitmap bitmap = Bitmap.createBitmap((int) dstRectF.width(), (int) dstRectF.height(), Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        adjustCanvasMatrix(canvas, dstRectF);
+        canvas.drawBitmap(dstBitmap, null, dstRectF, mSrcPaint);
+        mSrcPaint.setXfermode(xfermode);
+        canvas.drawBitmap(srcBitmap, null, srcRectF, mSrcPaint);
+        mSrcPaint.setXfermode(null);
+        return bitmap;
+    }
+
+    //设置边框后调整矩阵的缩放系数
+    private void adjustCanvasMatrix(Canvas canvas, RectF rectF) {
         if (mBorderWidth > 0) {
             Matrix matrix = new Matrix();
             float scaleWidth = (rectF.width() - mBorderWidth * 2) / rectF.width();
@@ -260,11 +295,12 @@ public class OvalImageView extends ImageView {
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 
+    //当设置边框后调整 矩形的绘制坐标
     private void adjustRectF(RectF rectF) {
         rectF.set(rectF.left + mBorderWidth,
                 rectF.top + mBorderWidth,
-                rectF.right - mBorderWidth,
-                rectF.bottom - mBorderWidth);
+                rectF.right + mBorderWidth,
+                rectF.bottom + mBorderWidth);
     }
 
 }
