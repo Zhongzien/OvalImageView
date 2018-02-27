@@ -123,16 +123,25 @@ public class OvalImageView extends ImageView {
         invalidate();
     }
 
+    /**
+     * 设置绘制的形状
+     */
     public void setDrawShape(int drawShape) {
         mDrawShape = drawShape;
         invalidate();
     }
 
+    /**
+     * 设置边框宽度
+     */
     public void setBorderWidth(float width) {
         mBorderWidth = dip2px(width);
         invalidate();
     }
 
+    /**
+     * 设置边框颜色
+     */
     public void setBorderColor(@ColorInt int color) {
         mBorderWidth = color;
         invalidate();
